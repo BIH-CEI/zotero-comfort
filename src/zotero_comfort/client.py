@@ -2,15 +2,18 @@
 MCP client for Zotero integration via 54yyyu/zotero-mcp.
 
 Provides a synchronous Python interface to the community Zotero MCP server.
+Supports dual-library architecture for group and personal libraries.
 """
 
 import asyncio
 import json
 import os
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Literal
 
 logger = logging.getLogger(__name__)
+
+LibraryType = Literal["group", "personal"]
 
 try:
     from mcp import ClientSession, StdioServerParameters
@@ -228,3 +231,166 @@ class ZoteroMCPClient:
             logger.error(f"Tag search error: {result['error']}")
             return []
         return result.get("items", [])
+
+
+class DualLibraryClient:
+    """
+    Client that manages both group and personal Zotero libraries.
+
+    Provides unified access to both libraries with explicit library selection
+    for operations that support it.
+    """
+
+    def __init__(
+        self,
+        group_library_id: Optional[str] = None,
+        group_api_key: Optional[str] = None,
+        personal_library_id: Optional[str] = None,
+        personal_api_key: Optional[str] = None,
+        mcp_command: str = "zotero-mcp",
+    ):
+        """Initialize dual library client.
+
+        Args:
+            group_library_id: Group library ID (from env ZOTERO_GROUP_LIBRARY_ID)
+            group_api_key: Group library API key (from env ZOTERO_GROUP_API_KEY)
+            personal_library_id: Personal library ID (from env ZOTERO_PERSONAL_LIBRARY_ID)
+            personal_api_key: Personal library API key (from env ZOTERO_PERSONAL_API_KEY)
+            mcp_command: Command to run the MCP server
+        """
+        # Group library configuration
+        self.group_library_id = group_library_id or os.getenv("ZOTERO_GROUP_LIBRARY_ID")
+        self.group_api_key = group_api_key or os.getenv("ZOTERO_GROUP_API_KEY")
+
+        # Personal library configuration
+        self.personal_library_id = personal_library_id or os.getenv("ZOTERO_PERSONAL_LIBRARY_ID")
+        self.personal_api_key = personal_api_key or os.getenv("ZOTERO_PERSONAL_API_KEY")
+
+        # Fallback to single library env vars for backwards compatibility
+        if not self.group_library_id:
+            self.group_library_id = os.getenv("ZOTERO_LIBRARY_ID")
+            self.group_api_key = self.group_api_key or os.getenv("ZOTERO_API_KEY")
+
+        self.mcp_command = mcp_command
+
+        # Initialize clients (lazy - only if credentials provided)
+        self._group_client: Optional[ZoteroMCPClient] = None
+        self._personal_client: Optional[ZoteroMCPClient] = None
+
+        # Default library for operations
+        self._default_library: LibraryType = "group"
+
+        logger.info(
+            f"DualLibraryClient: group={self.group_library_id}, "
+            f"personal={self.personal_library_id}"
+        )
+
+    @property
+    def group_client(self) -> Optional[ZoteroMCPClient]:
+        """Get group library client (lazy initialization)."""
+        if self._group_client is None and self.group_library_id and self.group_api_key:
+            self._group_client = ZoteroMCPClient(
+                library_id=self.group_library_id,
+                library_type="group",
+                api_key=self.group_api_key,
+                mcp_command=self.mcp_command,
+            )
+        return self._group_client
+
+    @property
+    def personal_client(self) -> Optional[ZoteroMCPClient]:
+        """Get personal library client (lazy initialization)."""
+        if self._personal_client is None and self.personal_library_id and self.personal_api_key:
+            self._personal_client = ZoteroMCPClient(
+                library_id=self.personal_library_id,
+                library_type="user",
+                api_key=self.personal_api_key,
+                mcp_command=self.mcp_command,
+            )
+        return self._personal_client
+
+    def get_client(self, library: Optional[LibraryType] = None) -> ZoteroMCPClient:
+        """Get client for specified library.
+
+        Args:
+            library: 'group' or 'personal', defaults to default library
+
+        Returns:
+            ZoteroMCPClient for the specified library
+
+        Raises:
+            ValueError: If specified library is not configured
+        """
+        library = library or self._default_library
+
+        if library == "group":
+            if not self.group_client:
+                raise ValueError("Group library not configured")
+            return self.group_client
+        elif library == "personal":
+            if not self.personal_client:
+                raise ValueError("Personal library not configured")
+            return self.personal_client
+        else:
+            raise ValueError(f"Unknown library type: {library}")
+
+    def set_default_library(self, library: LibraryType) -> None:
+        """Set the default library for operations."""
+        if library not in ("group", "personal"):
+            raise ValueError(f"Invalid library type: {library}")
+        self._default_library = library
+        logger.info(f"Default library set to: {library}")
+
+    def get_library_status(self) -> Dict[str, Any]:
+        """Get status of both libraries.
+
+        Returns:
+            {
+                'group': {'configured': bool, 'library_id': str},
+                'personal': {'configured': bool, 'library_id': str},
+                'default': str
+            }
+        """
+        return {
+            "group": {
+                "configured": bool(self.group_library_id and self.group_api_key),
+                "library_id": self.group_library_id or "",
+            },
+            "personal": {
+                "configured": bool(self.personal_library_id and self.personal_api_key),
+                "library_id": self.personal_library_id or "",
+            },
+            "default": self._default_library,
+        }
+
+    # Convenience methods that delegate to appropriate client
+
+    def search_items(
+        self, query: str, limit: int = 50, library: Optional[LibraryType] = None
+    ) -> List[Dict]:
+        """Search for papers in specified library."""
+        return self.get_client(library).search_items(query, limit=limit)
+
+    def get_item(
+        self, item_key: str, library: Optional[LibraryType] = None
+    ) -> Dict[str, Any]:
+        """Get metadata for a specific item."""
+        return self.get_client(library).get_item(item_key)
+
+    def list_collections(
+        self, library: Optional[LibraryType] = None
+    ) -> List[Dict]:
+        """List all collections in specified library."""
+        return self.get_client(library).list_collections()
+
+    def get_collection_items(
+        self, collection_key: str, library: Optional[LibraryType] = None
+    ) -> List[Dict]:
+        """Get items in a specific collection."""
+        return self.get_client(library).get_collection_items(collection_key)
+
+    def semantic_search(
+        self, query: str, limit: int = 10, library: Optional[LibraryType] = None
+    ) -> List[Dict]:
+        """AI-powered semantic search in specified library."""
+        return self.get_client(library).semantic_search(query, limit=limit)

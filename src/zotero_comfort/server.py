@@ -3,6 +3,7 @@ MCP Server for Zotero Comfort.
 
 Exposes both proxy layer and smart workflows as MCP tools.
 Implements JSON-RPC 2.0 protocol for Claude integration.
+Supports dual-library architecture for group and personal libraries.
 """
 
 import json
@@ -10,6 +11,7 @@ import sys
 import logging
 from typing import Any, Dict, Optional
 
+from .client import DualLibraryClient
 from .proxy import ZoteroProxy
 from .workflows import ZoteroWorkflows
 
@@ -25,10 +27,11 @@ class ZoteroComfortServer:
     """MCP Server exposing Zotero proxy and workflow tools."""
 
     def __init__(self):
-        """Initialize MCP server with proxy and workflows."""
-        self.proxy = ZoteroProxy()
-        self.workflows = ZoteroWorkflows(client=self.proxy.client)
-        logger.info("Zotero Comfort MCP Server initialized")
+        """Initialize MCP server with dual-library support."""
+        self.dual_client = DualLibraryClient()
+        self.proxy = ZoteroProxy(client=self.dual_client.group_client)
+        self.workflows = ZoteroWorkflows(client=self.dual_client.group_client)
+        logger.info("Zotero Comfort MCP Server initialized (dual-library mode)")
 
     def get_tools(self) -> list:
         """Return list of available tools."""
@@ -198,6 +201,65 @@ class ZoteroComfortServer:
                     "required": ["item_key"],
                 },
             },
+            # Library Management (C) - Dual library support
+            {
+                "name": "get_library_status",
+                "description": "Get status of configured libraries (group and personal)",
+                "inputSchema": {"type": "object", "properties": {}},
+            },
+            {
+                "name": "set_default_library",
+                "description": "Set the default library for operations",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "library": {
+                            "type": "string",
+                            "enum": ["group", "personal"],
+                            "description": "Library to use as default",
+                        }
+                    },
+                    "required": ["library"],
+                },
+            },
+            {
+                "name": "search_group_library",
+                "description": "Search for papers in the group (shared team) library",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Search query",
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum results (default: 50)",
+                            "default": 50,
+                        },
+                    },
+                    "required": ["query"],
+                },
+            },
+            {
+                "name": "search_personal_library",
+                "description": "Search for papers in your personal library",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Search query",
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum results (default: 50)",
+                            "default": 50,
+                        },
+                    },
+                    "required": ["query"],
+                },
+            },
         ]
 
     def make_response(
@@ -291,6 +353,26 @@ class ZoteroComfortServer:
             return self.workflows.find_related_papers(
                 arguments.get("item_key", ""),
                 arguments.get("limit", 10),
+            )
+
+        # Library Management (C)
+        elif tool_name == "get_library_status":
+            return self.dual_client.get_library_status()
+        elif tool_name == "set_default_library":
+            library = arguments.get("library", "group")
+            self.dual_client.set_default_library(library)
+            return {"status": "success", "default_library": library}
+        elif tool_name == "search_group_library":
+            return self.dual_client.search_items(
+                arguments.get("query", ""),
+                arguments.get("limit", 50),
+                library="group",
+            )
+        elif tool_name == "search_personal_library":
+            return self.dual_client.search_items(
+                arguments.get("query", ""),
+                arguments.get("limit", 50),
+                library="personal",
             )
 
         else:
