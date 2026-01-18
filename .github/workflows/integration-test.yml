@@ -1,0 +1,37 @@
+name: Integration Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      test_filter:
+        description: 'Test filter pattern (optional)'
+        required: false
+        default: ''
+
+jobs:
+  integration-test:
+    runs-on: ubuntu-latest
+    environment: integration
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install -e ".[dev]"
+
+      - name: Run integration tests
+        env:
+          ZOTERO_LIBRARY_ID: ${{ secrets.ZOTERO_LIBRARY_ID }}
+          ZOTERO_LIBRARY_TYPE: ${{ secrets.ZOTERO_LIBRARY_TYPE }}
+          ZOTERO_API_KEY: ${{ secrets.ZOTERO_API_KEY }}
+        run: |
+          if [ -n "${{ github.event.inputs.test_filter }}" ]; then
+            pytest tests/ -v -k "${{ github.event.inputs.test_filter }}" --tb=short -m integration
+          else
+            pytest tests/ -v --tb=short -m integration
+          fi
