@@ -9,7 +9,10 @@ import asyncio
 import json
 import os
 import logging
+import uuid
 from typing import Any, Dict, List, Optional, Literal
+
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +64,28 @@ class ZoteroMCPClient:
             self._env["ZOTERO_API_KEY"] = self.api_key
 
         logger.info(f"ZoteroMCPClient: {self.library_type} library {self.library_id}")
+
+        # Zotero API base URL for write operations
+        self._api_base = "https://api.zotero.org"
+
+    def _get_api_prefix(self) -> str:
+        """Get the API prefix for the current library."""
+        if self.library_type == "group":
+            return f"{self._api_base}/groups/{self.library_id}"
+        else:
+            return f"{self._api_base}/users/{self.library_id}"
+
+    def _api_headers(self, write_token: Optional[str] = None) -> Dict[str, str]:
+        """Get headers for Zotero API requests."""
+        headers = {
+            "Zotero-API-Version": "3",
+            "Content-Type": "application/json",
+        }
+        if self.api_key:
+            headers["Zotero-API-Key"] = self.api_key
+        if write_token:
+            headers["Zotero-Write-Token"] = write_token
+        return headers
 
     def _get_server_params(self) -> "StdioServerParameters":
         """Get MCP server parameters."""
@@ -231,6 +256,302 @@ class ZoteroMCPClient:
             logger.error(f"Tag search error: {result['error']}")
             return []
         return result.get("items", [])
+
+    # Collection write operations (direct Zotero API calls)
+
+    def create_collection(
+        self, name: str, parent_collection_key: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Create a new collection.
+
+        Args:
+            name: Collection name
+            parent_collection_key: Optional parent collection key
+
+        Returns:
+            Dict with 'status', 'key', and collection data
+        """
+        logger.info(f"Creating collection: {name}")
+
+        url = f"{self._get_api_prefix()}/collections"
+        write_token = str(uuid.uuid4())
+
+        payload = [{"name": name}]
+        if parent_collection_key:
+            payload[0]["parentCollection"] = parent_collection_key
+
+        try:
+            with httpx.Client(timeout=30.0) as client:
+                response = client.post(
+                    url,
+                    headers=self._api_headers(write_token=write_token),
+                    json=payload,
+                )
+                response.raise_for_status()
+
+                result = response.json()
+                if "success" in result and "0" in result["success"]:
+                    collection_key = result["success"]["0"]
+                    return {
+                        "status": "success",
+                        "key": collection_key,
+                        "name": name,
+                        "data": result.get("successful", {}).get("0", {}),
+                    }
+                elif "successful" in result and "0" in result["successful"]:
+                    collection_data = result["successful"]["0"]
+                    return {
+                        "status": "success",
+                        "key": collection_data.get("key"),
+                        "name": name,
+                        "data": collection_data,
+                    }
+                else:
+                    return {"status": "error", "error": "Unexpected response format"}
+
+        except httpx.HTTPStatusError as e:
+            logger.error(f"HTTP error creating collection: {e}")
+            return {"status": "error", "error": str(e)}
+        except Exception as e:
+            logger.error(f"Error creating collection: {e}")
+            return {"status": "error", "error": str(e)}
+
+    def add_items_to_collection(
+        self, collection_key: str, item_keys: List[str]
+    ) -> Dict[str, Any]:
+        """Add items to a collection."""
+        logger.info(f"Adding {len(item_keys)} items to collection {collection_key}")
+
+        results = {"status": "success", "added": 0, "failed": 0, "details": []}
+
+        for item_key in item_keys:
+            try:
+                item = self.get_item(item_key)
+                if "error" in item:
+                    results["failed"] += 1
+                    results["details"].append({"item_key": item_key, "status": "error"})
+                    continue
+
+                current_collections = item.get("collections", [])
+                if collection_key in current_collections:
+                    results["details"].append({"item_key": item_key, "status": "already_in_collection"})
+                    continue
+
+                updated_collections = current_collections + [collection_key]
+                url = f"{self._get_api_prefix()}/items/{item_key}"
+                version = item.get("version", 0)
+
+                with httpx.Client(timeout=30.0) as client:
+                    response = client.patch(
+                        url,
+                        headers={**self._api_headers(), "If-Unmodified-Since-Version": str(version)},
+                        json={"collections": updated_collections},
+                    )
+                    response.raise_for_status()
+
+                results["added"] += 1
+                results["details"].append({"item_key": item_key, "status": "added"})
+
+            except Exception as e:
+                results["failed"] += 1
+                results["details"].append({"item_key": item_key, "status": "error", "error": str(e)})
+
+        if results["failed"] > 0:
+            results["status"] = "partial" if results["added"] > 0 else "error"
+
+        return results
+
+    def remove_item_from_collection(self, collection_key: str, item_key: str) -> Dict[str, Any]:
+        """Remove an item from a collection."""
+        logger.info(f"Removing {item_key} from collection {collection_key}")
+
+        try:
+            item = self.get_item(item_key)
+            if "error" in item:
+                return {"status": "error", "error": item["error"]}
+
+            current_collections = item.get("collections", [])
+            if collection_key not in current_collections:
+                return {"status": "success", "message": "Item not in collection"}
+
+            updated_collections = [c for c in current_collections if c != collection_key]
+            url = f"{self._get_api_prefix()}/items/{item_key}"
+            version = item.get("version", 0)
+
+            with httpx.Client(timeout=30.0) as client:
+                response = client.patch(
+                    url,
+                    headers={**self._api_headers(), "If-Unmodified-Since-Version": str(version)},
+                    json={"collections": updated_collections},
+                )
+                response.raise_for_status()
+
+            return {"status": "success", "item_key": item_key, "collection_key": collection_key}
+
+        except Exception as e:
+            logger.error(f"Error removing item from collection: {e}")
+            return {"status": "error", "error": str(e)}
+
+    def delete_collection(self, collection_key: str) -> Dict[str, Any]:
+        """Delete a collection (items remain in library)."""
+        logger.info(f"Deleting collection: {collection_key}")
+
+        try:
+            url = f"{self._get_api_prefix()}/collections/{collection_key}"
+
+            with httpx.Client(timeout=30.0) as client:
+                get_response = client.get(url, headers=self._api_headers())
+                get_response.raise_for_status()
+                version = get_response.headers.get("Last-Modified-Version", "0")
+
+                delete_response = client.delete(
+                    url,
+                    headers={**self._api_headers(), "If-Unmodified-Since-Version": str(version)},
+                )
+                delete_response.raise_for_status()
+
+            return {"status": "success", "collection_key": collection_key}
+
+        except Exception as e:
+            logger.error(f"Error deleting collection: {e}")
+            return {"status": "error", "error": str(e)}
+
+    # DOI resolution (CrossRef API)
+
+    def resolve_doi(self, doi: str) -> Dict[str, Any]:
+        """Resolve DOI metadata via CrossRef API."""
+        logger.info(f"Resolving DOI: {doi}")
+
+        # Normalize DOI
+        if doi.startswith("https://doi.org/"):
+            doi = doi[16:]
+        elif doi.startswith("http://doi.org/"):
+            doi = doi[15:]
+        elif doi.startswith("doi:"):
+            doi = doi[4:]
+
+        url = f"https://api.crossref.org/works/{doi}"
+
+        try:
+            with httpx.Client(timeout=30.0) as client:
+                response = client.get(url, headers={"Accept": "application/json"})
+                response.raise_for_status()
+
+                data = response.json()
+                work = data.get("message", {})
+
+                result = {
+                    "status": "success",
+                    "doi": doi,
+                    "title": work.get("title", [""])[0] if work.get("title") else "",
+                    "authors": [],
+                    "date": "",
+                    "journal": work.get("container-title", [""])[0] if work.get("container-title") else "",
+                    "publisher": work.get("publisher", ""),
+                    "type": work.get("type", ""),
+                    "url": work.get("URL", ""),
+                    "abstract": work.get("abstract", ""),
+                }
+
+                for author in work.get("author", []):
+                    result["authors"].append({
+                        "firstName": author.get("given", ""),
+                        "lastName": author.get("family", ""),
+                    })
+
+                date_parts = work.get("issued", {}).get("date-parts", [[]])
+                if date_parts and date_parts[0]:
+                    parts = date_parts[0]
+                    if len(parts) >= 3:
+                        result["date"] = f"{parts[0]}-{parts[1]:02d}-{parts[2]:02d}"
+                    elif len(parts) >= 2:
+                        result["date"] = f"{parts[0]}-{parts[1]:02d}"
+                    elif len(parts) >= 1:
+                        result["date"] = str(parts[0])
+
+                return result
+
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                return {"status": "error", "error": "DOI not found", "doi": doi}
+            return {"status": "error", "error": str(e), "doi": doi}
+        except Exception as e:
+            logger.error(f"Error resolving DOI: {e}")
+            return {"status": "error", "error": str(e), "doi": doi}
+
+    def search_by_doi(self, doi: str) -> Optional[Dict[str, Any]]:
+        """Search for an existing item by DOI."""
+        # Normalize DOI
+        if doi.startswith("https://doi.org/"):
+            doi = doi[16:]
+        elif doi.startswith("http://doi.org/"):
+            doi = doi[15:]
+        elif doi.startswith("doi:"):
+            doi = doi[4:]
+
+        items = self.search_items(doi, limit=10)
+        for item in items:
+            item_doi = item.get("DOI", "")
+            if item_doi and item_doi.lower() == doi.lower():
+                return item
+        return None
+
+    def add_item(self, item_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Add a new item to the Zotero library."""
+        logger.info(f"Adding item: {item_data.get('title', 'Untitled')}")
+
+        url = f"{self._get_api_prefix()}/items"
+        write_token = str(uuid.uuid4())
+
+        if "itemType" not in item_data:
+            item_data["itemType"] = "journalArticle"
+
+        try:
+            with httpx.Client(timeout=30.0) as client:
+                response = client.post(
+                    url,
+                    headers=self._api_headers(write_token=write_token),
+                    json=[item_data],
+                )
+                response.raise_for_status()
+
+                result = response.json()
+                if "success" in result and "0" in result["success"]:
+                    return {"status": "success", "key": result["success"]["0"]}
+                elif "successful" in result and "0" in result["successful"]:
+                    return {"status": "success", "key": result["successful"]["0"].get("key")}
+                else:
+                    return {"status": "error", "error": "Unexpected response format"}
+
+        except Exception as e:
+            logger.error(f"Error adding item: {e}")
+            return {"status": "error", "error": str(e)}
+
+    def update_item(self, item_key: str, updates: Dict[str, Any]) -> Dict[str, Any]:
+        """Update an existing item."""
+        logger.info(f"Updating item: {item_key}")
+
+        try:
+            item = self.get_item(item_key)
+            if "error" in item:
+                return item
+
+            version = item.get("version", 0)
+            url = f"{self._get_api_prefix()}/items/{item_key}"
+
+            with httpx.Client(timeout=30.0) as client:
+                response = client.patch(
+                    url,
+                    headers={**self._api_headers(), "If-Unmodified-Since-Version": str(version)},
+                    json=updates,
+                )
+                response.raise_for_status()
+
+            return {"status": "success", "item_key": item_key}
+
+        except Exception as e:
+            logger.error(f"Error updating item: {e}")
+            return {"status": "error", "error": str(e)}
 
 
 class DualLibraryClient:
