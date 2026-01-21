@@ -1,9 +1,5 @@
 FROM python:3.11-slim
 
-# Build arguments (injected by GitHub Actions via secrets)
-ARG ZOTERO_GROUP=""
-ARG ZOTERO_GROUP_API=""
-
 WORKDIR /app
 
 # Install system dependencies
@@ -25,10 +21,9 @@ RUN pip install --no-cache-dir . pytest pytest-asyncio
 COPY docker-entrypoint.sh /
 RUN chmod +x /docker-entrypoint.sh
 
-# Environment variables for Zotero API
-# Injected at build-time from GitHub Secrets via docker build --build-arg
-ENV ZOTERO_API_KEY=${ZOTERO_GROUP_API}
-ENV ZOTERO_LIBRARY_ID=${ZOTERO_GROUP}
+# Environment variables for Zotero API (set at runtime via docker-compose or docker run)
+ENV ZOTERO_API_KEY=""
+ENV ZOTERO_LIBRARY_ID=""
 ENV ZOTERO_LIBRARY_TYPE="group"
 ENV LOG_LEVEL="info"
 
