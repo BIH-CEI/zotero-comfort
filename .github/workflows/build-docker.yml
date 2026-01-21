@@ -52,6 +52,9 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            ZOTERO_GROUP=${{ secrets.ZOTERO_GROUP }}
+            ZOTERO_GROUP_API=${{ secrets.ZOTERO_GROUP_API }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
