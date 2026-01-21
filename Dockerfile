@@ -1,18 +1,36 @@
-FROM python:3.12-slim
+FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install dependencies
-COPY pyproject.toml .
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    git \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy project files
+COPY pyproject.toml uv.lock* ./
 COPY src/ src/
+COPY tests/ tests/
 COPY README.md .
 
-RUN pip install --no-cache-dir .
+# Install dependencies with pip (uv available but pip is fine for production)
+RUN pip install --no-cache-dir . pytest pytest-asyncio
+
+# Copy entrypoint script
+COPY docker-entrypoint.sh /
+RUN chmod +x /docker-entrypoint.sh
 
 # Environment variables for Zotero API
 ENV ZOTERO_API_KEY=""
 ENV ZOTERO_LIBRARY_ID=""
 ENV ZOTERO_LIBRARY_TYPE="group"
+ENV LOG_LEVEL="info"
+
+# Health check (simple Python check to verify server is importable)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python -c "import zotero_comfort.server; print('healthy')" || exit 1
 
 # MCP server runs over stdio
-ENTRYPOINT ["zotero-comfort"]
+ENTRYPOINT ["/docker-entrypoint.sh"]
+CMD ["zotero-comfort"]
