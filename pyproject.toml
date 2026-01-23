@@ -27,6 +27,9 @@ classifiers = [
 dependencies = [
     "mcp>=1.0.0",
     "httpx>=0.27.0",
+    "biopython>=1.84",      # PubMed via NCBI Entrez
+    "arxiv>=2.1.0",         # arXiv API client
+    "xmltodict>=0.13.0",    # XML parsing for API responses
 ]
 
 [project.optional-dependencies]

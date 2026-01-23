@@ -9,11 +9,13 @@ Supports dual-library architecture for group and personal libraries.
 import json
 import sys
 import logging
+import asyncio
 from typing import Any, Dict, Optional
 
 from .client import DualLibraryClient
 from .proxy import ZoteroProxy
 from .workflows import ZoteroWorkflows
+from .workflows_external import ExternalWorkflows
 
 logging.basicConfig(
     level=logging.INFO,
@@ -31,7 +33,8 @@ class ZoteroComfortServer:
         self.dual_client = DualLibraryClient()
         self.proxy = ZoteroProxy(client=self.dual_client.group_client)
         self.workflows = ZoteroWorkflows(client=self.dual_client.group_client)
-        logger.info("Zotero Comfort MCP Server initialized (dual-library mode)")
+        self.external_workflows = ExternalWorkflows(zotero_client=self.dual_client.group_client)
+        logger.info("Zotero Comfort MCP Server initialized (dual-library mode + external sources)")
 
     def get_tools(self) -> list:
         """Return list of available tools."""
@@ -201,6 +204,97 @@ class ZoteroComfortServer:
                     "required": ["item_key"],
                 },
             },
+            # External Literature Workflows - PubMed & arXiv integration
+            {
+                "name": "search_pubmed_to_collection",
+                "description": "Search PubMed and add results to a Zotero collection",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "PubMed search query (e.g., 'PROMIS quality of life')",
+                        },
+                        "collection_name": {
+                            "type": "string",
+                            "description": "Target Zotero collection name",
+                        },
+                        "max_results": {
+                            "type": "integer",
+                            "description": "Maximum papers to add (default: 50)",
+                            "default": 50,
+                        },
+                        "create_collection": {
+                            "type": "boolean",
+                            "description": "Create collection if it doesn't exist (default: true)",
+                            "default": True,
+                        },
+                    },
+                    "required": ["query", "collection_name"],
+                },
+            },
+            {
+                "name": "search_arxiv_to_collection",
+                "description": "Search arXiv and add results to a Zotero collection",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "arXiv search query (e.g., 'machine learning healthcare')",
+                        },
+                        "collection_name": {
+                            "type": "string",
+                            "description": "Target Zotero collection name",
+                        },
+                        "max_results": {
+                            "type": "integer",
+                            "description": "Maximum papers to add (default: 50)",
+                            "default": 50,
+                        },
+                        "create_collection": {
+                            "type": "boolean",
+                            "description": "Create collection if it doesn't exist (default: true)",
+                            "default": True,
+                        },
+                    },
+                    "required": ["query", "collection_name"],
+                },
+            },
+            {
+                "name": "search_multi_source_to_collection",
+                "description": "Search multiple sources (PubMed, arXiv) and combine results in a Zotero collection",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Search query (applied to all sources)",
+                        },
+                        "collection_name": {
+                            "type": "string",
+                            "description": "Target Zotero collection name",
+                        },
+                        "sources": {
+                            "type": "array",
+                            "items": {"type": "string", "enum": ["pubmed", "arxiv"]},
+                            "description": "Sources to search (default: ['pubmed', 'arxiv'])",
+                            "default": ["pubmed", "arxiv"],
+                        },
+                        "max_results_per_source": {
+                            "type": "integer",
+                            "description": "Maximum results from each source (default: 25)",
+                            "default": 25,
+                        },
+                        "create_collection": {
+                            "type": "boolean",
+                            "description": "Create collection if it doesn't exist (default: true)",
+                            "default": True,
+                        },
+                    },
+                    "required": ["query", "collection_name"],
+                },
+            },
             # Library Management (C) - Dual library support
             {
                 "name": "get_library_status",
@@ -353,6 +447,36 @@ class ZoteroComfortServer:
             return self.workflows.find_related_papers(
                 arguments.get("item_key", ""),
                 arguments.get("limit", 10),
+            )
+
+        # External Literature Workflows
+        elif tool_name == "search_pubmed_to_collection":
+            return asyncio.run(
+                self.external_workflows.search_pubmed_to_collection(
+                    query=arguments.get("query", ""),
+                    collection_name=arguments.get("collection_name", ""),
+                    max_results=arguments.get("max_results", 50),
+                    create_collection=arguments.get("create_collection", True),
+                )
+            )
+        elif tool_name == "search_arxiv_to_collection":
+            return asyncio.run(
+                self.external_workflows.search_arxiv_to_collection(
+                    query=arguments.get("query", ""),
+                    collection_name=arguments.get("collection_name", ""),
+                    max_results=arguments.get("max_results", 50),
+                    create_collection=arguments.get("create_collection", True),
+                )
+            )
+        elif tool_name == "search_multi_source_to_collection":
+            return asyncio.run(
+                self.external_workflows.search_multi_source_to_collection(
+                    query=arguments.get("query", ""),
+                    collection_name=arguments.get("collection_name", ""),
+                    sources=arguments.get("sources", ["pubmed", "arxiv"]),
+                    max_results_per_source=arguments.get("max_results_per_source", 25),
+                    create_collection=arguments.get("create_collection", True),
+                )
             )
 
         # Library Management (C)
