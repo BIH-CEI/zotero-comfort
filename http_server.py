@@ -19,7 +19,8 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Body
+from pydantic import BaseModel
 from contextlib import asynccontextmanager
 
 # Import existing modules - NO DUPLICATION
@@ -69,6 +70,15 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+
+# =============================================================================
+# Request Models
+# =============================================================================
+
+class AddItemsRequest(BaseModel):
+    """Request body for adding items to a collection."""
+    item_keys: list[str]
 
 
 # =============================================================================
@@ -164,6 +174,52 @@ async def get_collection_items(collection_key: str):
         return {"collection_key": collection_key, "items": items, "count": len(items)}
     except Exception as e:
         logger.error(f"Collection items error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/collections/{collection_key}/items")
+async def add_items_to_collection(
+    collection_key: str,
+    request: AddItemsRequest
+):
+    """Add one or more items to a collection.
+
+    Items can belong to multiple collections simultaneously.
+    """
+    try:
+        result = await run_sync(
+            proxy.add_items_to_collection,
+            collection_key,
+            request.item_keys
+        )
+        return result
+    except Exception as e:
+        logger.error(f"Add items to collection error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/collections/{collection_key}/items/{item_key}")
+async def remove_item_from_collection(
+    collection_key: str,
+    item_key: str
+):
+    """Remove an item from a collection.
+
+    The item remains in the library, just not in this collection.
+    """
+    try:
+        result = await run_sync(
+            proxy.remove_item_from_collection,
+            collection_key,
+            item_key
+        )
+        if result.get("status") == "error":
+            raise HTTPException(status_code=400, detail=result.get("error"))
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Remove item from collection error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

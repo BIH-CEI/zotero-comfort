@@ -29,6 +29,8 @@ class ZoteroProxy:
     - get_recent → zotero_get_recent
     - get_tags → zotero_get_tags
     - search_by_tag → zotero_search_by_tag
+    - add_items_to_collection → HTTP API (collection management)
+    - remove_item_from_collection → HTTP API (collection management)
     """
 
     def __init__(self, client: Optional[ZoteroMCPClient] = None):
@@ -184,3 +186,56 @@ class ZoteroProxy:
         """
         logger.info(f"Proxy: search_by_tag(tag={tag!r})")
         return self.client.search_by_tag(tag)
+
+    def add_items_to_collection(
+        self, collection_key: str, item_keys: List[str]
+    ) -> Dict[str, Any]:
+        """Add one or more items to a collection.
+
+        Items can belong to multiple collections simultaneously.
+
+        Args:
+            collection_key: Collection key to add items to
+            item_keys: List of item keys to add
+
+        Returns:
+            Dictionary with status, counts, and details:
+            {
+                "status": "success" | "partial" | "error",
+                "added": int,
+                "failed": int,
+                "details": [{"item_key": str, "status": str, ...}, ...]
+            }
+        """
+        logger.info(
+            f"Proxy: add_items_to_collection(collection_key={collection_key!r}, "
+            f"item_keys={len(item_keys)} items)"
+        )
+        return self.client.add_items_to_collection(collection_key, item_keys)
+
+    def remove_item_from_collection(
+        self, collection_key: str, item_key: str
+    ) -> Dict[str, Any]:
+        """Remove an item from a collection.
+
+        The item remains in the library, just not in this collection.
+
+        Args:
+            collection_key: Collection key to remove item from
+            item_key: Item key to remove
+
+        Returns:
+            Dictionary with status and details:
+            {
+                "status": "success" | "error",
+                "item_key": str,
+                "collection_key": str,
+                "message": str (optional),
+                "error": str (if error)
+            }
+        """
+        logger.info(
+            f"Proxy: remove_item_from_collection(collection_key={collection_key!r}, "
+            f"item_key={item_key!r})"
+        )
+        return self.client.remove_item_from_collection(collection_key, item_key)

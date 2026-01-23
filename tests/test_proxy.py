@@ -65,3 +65,40 @@ class TestZoteroProxy:
 
         proxy.client.semantic_search.assert_called_once_with("clinical NLP", limit=5)
         assert len(result) == 1
+
+    def test_add_items_to_collection(self):
+        """Test adding items to collection proxy."""
+        proxy = ZoteroProxy.__new__(ZoteroProxy)
+        proxy.client = MagicMock()
+        proxy.client.add_items_to_collection.return_value = {
+            "status": "success",
+            "added": 2,
+            "failed": 0,
+            "details": [
+                {"item_key": "ITEM1", "status": "added"},
+                {"item_key": "ITEM2", "status": "added"},
+            ],
+        }
+
+        result = proxy.add_items_to_collection("COLL1", ["ITEM1", "ITEM2"])
+
+        proxy.client.add_items_to_collection.assert_called_once_with("COLL1", ["ITEM1", "ITEM2"])
+        assert result["status"] == "success"
+        assert result["added"] == 2
+        assert len(result["details"]) == 2
+
+    def test_remove_item_from_collection(self):
+        """Test removing item from collection proxy."""
+        proxy = ZoteroProxy.__new__(ZoteroProxy)
+        proxy.client = MagicMock()
+        proxy.client.remove_item_from_collection.return_value = {
+            "status": "success",
+            "item_key": "ITEM1",
+            "collection_key": "COLL1",
+        }
+
+        result = proxy.remove_item_from_collection("COLL1", "ITEM1")
+
+        proxy.client.remove_item_from_collection.assert_called_once_with("COLL1", "ITEM1")
+        assert result["status"] == "success"
+        assert result["item_key"] == "ITEM1"
