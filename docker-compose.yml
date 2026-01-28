@@ -1,16 +1,26 @@
 # =============================================================================
-# Zotero Comfort - Standalone MCP Server
+# Zotero Comfort - Standalone MCP Server (Dual Library Support)
 # =============================================================================
 # Standalone deployment of CEIR Zotero Research Library Integration
+# Supports both Group (CEI_Publications) and Personal Zotero libraries
 #
 # Starten:  docker compose up -d
 # Stoppen:  docker compose down
 # Logs:     docker compose logs -f zotero-comfort
 #
-# Setup:
+# Setup Option 1 - Environment Variables (.env file, Development):
 #   1. cp .env.example .env
 #   2. Edit .env with your Zotero API credentials
 #   3. docker compose up -d
+#
+# Setup Option 2 - Docker Secrets (Production/Secure):
+#   1. Create secrets:
+#      echo "5767153" | docker secret create zotero_group_library_id -
+#      echo "your-group-key" | docker secret create zotero_group_api_key -
+#      echo "your-personal-id" | docker secret create zotero_personal_library_id -
+#      echo "your-personal-key" | docker secret create zotero_personal_api_key -
+#   2. Run with secrets:
+#      docker compose -f docker-compose.yml -f docker-compose.secrets.yml up -d
 # =============================================================================
 
 version: '3.8'
@@ -23,9 +33,14 @@ services:
     image: ceir-zotero-comfort:latest
     container_name: ceir-zotero-comfort
     environment:
-      - ZOTERO_LIBRARY_ID=${ZOTERO_LIBRARY_ID:-5767153}
-      - ZOTERO_LIBRARY_TYPE=${ZOTERO_LIBRARY_TYPE:-group}
-      - ZOTERO_API_KEY=${ZOTERO_API_KEY}
+      # Group Library (CEI_Publications) - Shared
+      - ZOTERO_GROUP_LIBRARY_ID=${ZOTERO_GROUP_LIBRARY_ID:-${ZOTERO_LIBRARY_ID:-5767153}}
+      - ZOTERO_GROUP_LIBRARY_TYPE=group
+      - ZOTERO_GROUP_API_KEY=${ZOTERO_GROUP_API_KEY:-${ZOTERO_API_KEY}}
+      # Personal Library (Optional) - Individual User
+      - ZOTERO_PERSONAL_LIBRARY_ID=${ZOTERO_PERSONAL_LIBRARY_ID}
+      - ZOTERO_PERSONAL_API_KEY=${ZOTERO_PERSONAL_API_KEY}
+      # Logging
       - LOG_LEVEL=${LOG_LEVEL:-info}
     ports:
       - "${ZOTERO_PORT:-3001}:3000"
