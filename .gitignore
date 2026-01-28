@@ -80,3 +80,4 @@ debug_*.py
 add_*.py
 check_*.py
 search_*.py
+uv.lock
