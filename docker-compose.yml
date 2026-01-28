@@ -1,0 +1,38 @@
+# =============================================================================
+# Zotero Comfort - Standalone MCP Server
+# =============================================================================
+# Standalone deployment of CEIR Zotero Research Library Integration
+#
+# Starten:  docker compose up -d
+# Stoppen:  docker compose down
+# Logs:     docker compose logs -f zotero-comfort
+#
+# Setup:
+#   1. cp .env.example .env
+#   2. Edit .env with your Zotero API credentials
+#   3. docker compose up -d
+# =============================================================================
+
+version: '3.8'
+
+services:
+  zotero-comfort:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ceir-zotero-comfort:latest
+    container_name: ceir-zotero-comfort
+    environment:
+      - ZOTERO_LIBRARY_ID=${ZOTERO_LIBRARY_ID:-5767153}
+      - ZOTERO_LIBRARY_TYPE=${ZOTERO_LIBRARY_TYPE:-group}
+      - ZOTERO_API_KEY=${ZOTERO_API_KEY}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    ports:
+      - "${ZOTERO_PORT:-3001}:3000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import zotero_comfort.server; print('healthy')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
