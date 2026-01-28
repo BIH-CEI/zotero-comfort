@@ -70,3 +70,13 @@ tmp/
 
 # Beads are tracked in .beads/issues.jsonl and config files
 # Beads runtime files are ignored by .beads/.gitignore
+
+# Runtime
+CLAUDE.md
+.env
+*.py.bak
+test_*.py
+debug_*.py
+add_*.py
+check_*.py
+search_*.py
