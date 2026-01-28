@@ -5,7 +5,12 @@ set -e
 # Docker Secrets are mounted at /run/secrets/
 # Supports both single-library and dual-library configurations
 
-# Group Library Secrets
+# Group Library Secrets (supports both naming conventions)
+if [ -f "/run/secrets/zotero_group_id" ]; then
+    export ZOTERO_GROUP_LIBRARY_ID=$(cat /run/secrets/zotero_group_id)
+    echo "Loaded ZOTERO_GROUP_LIBRARY_ID from Docker Secret (zotero_group_id)"
+fi
+
 if [ -f "/run/secrets/zotero_group_library_id" ]; then
     export ZOTERO_GROUP_LIBRARY_ID=$(cat /run/secrets/zotero_group_library_id)
     echo "Loaded ZOTERO_GROUP_LIBRARY_ID from Docker Secret"
@@ -16,7 +21,12 @@ if [ -f "/run/secrets/zotero_group_api_key" ]; then
     echo "Loaded ZOTERO_GROUP_API_KEY from Docker Secret"
 fi
 
-# Personal Library Secrets
+# Personal Library Secrets (supports both naming conventions)
+if [ -f "/run/secrets/zotero_personal_id" ]; then
+    export ZOTERO_PERSONAL_LIBRARY_ID=$(cat /run/secrets/zotero_personal_id)
+    echo "Loaded ZOTERO_PERSONAL_LIBRARY_ID from Docker Secret (zotero_personal_id)"
+fi
+
 if [ -f "/run/secrets/zotero_personal_library_id" ]; then
     export ZOTERO_PERSONAL_LIBRARY_ID=$(cat /run/secrets/zotero_personal_library_id)
     echo "Loaded ZOTERO_PERSONAL_LIBRARY_ID from Docker Secret"
@@ -25,6 +35,15 @@ fi
 if [ -f "/run/secrets/zotero_personal_api_key" ]; then
     export ZOTERO_PERSONAL_API_KEY=$(cat /run/secrets/zotero_personal_api_key)
     echo "Loaded ZOTERO_PERSONAL_API_KEY from Docker Secret"
+fi
+
+# Env var fallbacks (map ZOTERO_GROUP_ID → ZOTERO_GROUP_LIBRARY_ID for consistency)
+if [ -z "$ZOTERO_GROUP_LIBRARY_ID" ] && [ -n "$ZOTERO_GROUP_ID" ]; then
+    export ZOTERO_GROUP_LIBRARY_ID="$ZOTERO_GROUP_ID"
+fi
+
+if [ -z "$ZOTERO_PERSONAL_LIBRARY_ID" ] && [ -n "$ZOTERO_PERSONAL_ID" ]; then
+    export ZOTERO_PERSONAL_LIBRARY_ID="$ZOTERO_PERSONAL_ID"
 fi
 
 # Legacy single-library secrets (backwards compatibility)

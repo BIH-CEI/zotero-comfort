@@ -34,11 +34,11 @@ services:
     container_name: ceir-zotero-comfort
     environment:
       # Group Library (CEI_Publications) - Shared
-      - ZOTERO_GROUP_LIBRARY_ID=${ZOTERO_GROUP_LIBRARY_ID:-${ZOTERO_LIBRARY_ID:-5767153}}
+      - ZOTERO_GROUP_LIBRARY_ID=${ZOTERO_GROUP_LIBRARY_ID:-${ZOTERO_GROUP_ID:-${ZOTERO_LIBRARY_ID:-5767153}}}
       - ZOTERO_GROUP_LIBRARY_TYPE=group
       - ZOTERO_GROUP_API_KEY=${ZOTERO_GROUP_API_KEY:-${ZOTERO_API_KEY}}
       # Personal Library (Optional) - Individual User
-      - ZOTERO_PERSONAL_LIBRARY_ID=${ZOTERO_PERSONAL_LIBRARY_ID}
+      - ZOTERO_PERSONAL_LIBRARY_ID=${ZOTERO_PERSONAL_LIBRARY_ID:-${ZOTERO_PERSONAL_ID}}
       - ZOTERO_PERSONAL_API_KEY=${ZOTERO_PERSONAL_API_KEY}
       # Logging
       - LOG_LEVEL=${LOG_LEVEL:-info}
