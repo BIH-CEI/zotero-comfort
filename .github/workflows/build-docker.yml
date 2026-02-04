@@ -88,8 +88,8 @@ jobs:
             --entrypoint /docker-entrypoint.sh \
             "$IMAGE" echo "✅ Entrypoint works"
 
-          # Test 2: Check MCP server module
-          docker run --rm "$IMAGE" \
-            python -c "import zotero_comfort.server; print('✅ MCP server imports successfully')"
+          # Test 2: Check MCP server module (override entrypoint to skip env validation)
+          docker run --rm --entrypoint python "$IMAGE" \
+            -c "import zotero_comfort.server; print('✅ MCP server imports successfully')"
 
           echo "✅ All tests passed!"
