@@ -74,7 +74,7 @@ jobs:
 
       - name: Test Docker image
         run: |
-          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+          IMAGE=$(echo "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest" | tr '[:upper:]' '[:lower:]')
 
           echo "Testing image: $IMAGE"
 
