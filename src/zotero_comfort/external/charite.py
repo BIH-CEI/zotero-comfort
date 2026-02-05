@@ -20,8 +20,8 @@ Provides:
 import asyncio
 import logging
 import re
-from typing import List, Dict, Optional
 from dataclasses import dataclass
+from typing import Dict, List, Optional
 
 import httpx
 
@@ -489,7 +489,9 @@ class ChariteClient(ExternalSource):
                     a_token = author.get("token")
                     if a_token and surname in team_surnames and surname not in discovered:
                         discovered[surname] = a_token
-                        logger.info(f"Discovered token for {author.get('first_name')} {surname}: {a_token}")
+                        logger.info(
+                            f"Discovered token for {author.get('first_name')} {surname}: {a_token}"
+                        )
 
             await asyncio.sleep(0.3)
 

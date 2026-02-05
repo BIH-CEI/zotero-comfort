@@ -7,10 +7,10 @@ Supports dual-library architecture for group and personal libraries.
 
 import asyncio
 import json
-import os
 import logging
+import os
 import uuid
-from typing import Any, Dict, List, Optional, Literal
+from typing import Any, Dict, List, Literal, Optional
 
 import httpx
 
@@ -334,7 +334,9 @@ class ZoteroMCPClient:
 
                 current_collections = item.get("collections", [])
                 if collection_key in current_collections:
-                    results["details"].append({"item_key": item_key, "status": "already_in_collection"})
+                    results["details"].append({
+                        "item_key": item_key, "status": "already_in_collection",
+                    })
                     continue
 
                 updated_collections = current_collections + [collection_key]
@@ -344,7 +346,10 @@ class ZoteroMCPClient:
                 with httpx.Client(timeout=30.0) as client:
                     response = client.patch(
                         url,
-                        headers={**self._api_headers(), "If-Unmodified-Since-Version": str(version)},
+                        headers={
+                            **self._api_headers(),
+                            "If-Unmodified-Since-Version": str(version),
+                        },
                         json={"collections": updated_collections},
                     )
                     response.raise_for_status()
@@ -354,7 +359,9 @@ class ZoteroMCPClient:
 
             except Exception as e:
                 results["failed"] += 1
-                results["details"].append({"item_key": item_key, "status": "error", "error": str(e)})
+                results["details"].append({
+                    "item_key": item_key, "status": "error", "error": str(e),
+                })
 
         if results["failed"] > 0:
             results["status"] = "partial" if results["added"] > 0 else "error"
@@ -446,7 +453,10 @@ class ZoteroMCPClient:
                     "title": work.get("title", [""])[0] if work.get("title") else "",
                     "authors": [],
                     "date": "",
-                    "journal": work.get("container-title", [""])[0] if work.get("container-title") else "",
+                    "journal": (
+                        work.get("container-title", [""])[0]
+                        if work.get("container-title") else ""
+                    ),
                     "publisher": work.get("publisher", ""),
                     "type": work.get("type", ""),
                     "url": work.get("URL", ""),

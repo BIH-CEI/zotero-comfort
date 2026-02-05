@@ -249,7 +249,7 @@ class ZoteroWorkflows:
                 "status": "success",
                 "format": format,
                 "count": 0,
-                "bibliography": f"% No papers found\n",
+                "bibliography": "% No papers found\n",
             }
 
         # Generate BibTeX

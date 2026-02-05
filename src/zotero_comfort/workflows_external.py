@@ -8,10 +8,10 @@ Combines external literature search (PubMed, arXiv) with Zotero integration:
 """
 
 import logging
-from typing import Any, Dict, List, Optional, Literal
+from typing import Any, Dict, List, Literal, Optional
 
 from .client import ZoteroMCPClient
-from .external import PubMedClient, ArXivClient
+from .external import ArXivClient, PubMedClient
 
 logger = logging.getLogger(__name__)
 
@@ -325,7 +325,9 @@ class ExternalWorkflows:
         # Search each source
         for source in sources:
             if source == "pubmed":
-                papers = await self.pubmed.search_articles(query, max_results=max_results_per_source)
+                papers = await self.pubmed.search_articles(
+                    query, max_results=max_results_per_source,
+                )
                 source_counts["pubmed"] = len(papers)
                 all_papers.extend([(paper, "pubmed") for paper in papers])
 
@@ -375,7 +377,9 @@ class ExternalWorkflows:
                 items_by_source[source].append(item_key)
                 logger.debug(f"Added item from {source}: {item_key} - {paper['title'][:50]}...")
             else:
-                logger.warning(f"Failed to add paper from {source}: {paper.get('title', 'Unknown')}")
+                logger.warning(
+                    f"Failed to add paper from {source}: {paper.get('title', 'Unknown')}"
+                )
 
         # Add all items to collection
         if items_added and collection_key:

@@ -13,8 +13,8 @@ Tools organized into 4 categories:
 
 import logging
 import re
-from typing import List, Dict, Optional, Tuple
 from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Tuple
 
 try:
     from Bio import Entrez, Medline
@@ -451,7 +451,10 @@ class PubMedClient(ExternalSource):
         return {
             "pmid": pmid,
             "pmcid": pmcid,
-            "full_text_xml": full_text_xml.decode("utf-8") if isinstance(full_text_xml, bytes) else full_text_xml,
+            "full_text_xml": (
+                full_text_xml.decode("utf-8")
+                if isinstance(full_text_xml, bytes) else full_text_xml
+            ),
             "url": f"https://www.ncbi.nlm.nih.gov/pmc/articles/PMC{pmcid}/"
         }
 
@@ -731,7 +734,7 @@ class PubMedClient(ExternalSource):
                     logger.info(f"Converted to: {result}")
                     return result
                 else:
-                    logger.info(f"No conversion found")
+                    logger.info("No conversion found")
                     return None
         except Exception as e:
             logger.error(f"ID conversion error: {e}")

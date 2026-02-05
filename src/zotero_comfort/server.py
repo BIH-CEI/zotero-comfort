@@ -6,11 +6,11 @@ Implements JSON-RPC 2.0 protocol for Claude integration.
 Supports dual-library architecture for group and personal libraries.
 """
 
-import json
-import sys
-import logging
 import asyncio
-from typing import Any, Dict, Optional
+import json
+import logging
+import sys
+from typing import Any, Optional
 
 from .client import DualLibraryClient
 from .proxy import ZoteroProxy
@@ -151,7 +151,10 @@ class ZoteroComfortServer:
             },
             {
                 "name": "smart_add_paper",
-                "description": "Add paper from DOI with duplicate checking and collection suggestion",
+                "description": (
+                    "Add paper from DOI with duplicate checking"
+                    " and collection suggestion"
+                ),
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -241,7 +244,10 @@ class ZoteroComfortServer:
                     "properties": {
                         "query": {
                             "type": "string",
-                            "description": "arXiv search query (e.g., 'machine learning healthcare')",
+                            "description": (
+                                "arXiv search query"
+                                " (e.g., 'machine learning healthcare')"
+                            ),
                         },
                         "collection_name": {
                             "type": "string",
@@ -263,7 +269,10 @@ class ZoteroComfortServer:
             },
             {
                 "name": "search_multi_source_to_collection",
-                "description": "Search multiple sources (PubMed, arXiv) and combine results in a Zotero collection",
+                "description": (
+                    "Search multiple sources (PubMed, arXiv)"
+                    " and combine results in a Zotero collection"
+                ),
                 "inputSchema": {
                     "type": "object",
                     "properties": {

@@ -7,7 +7,7 @@ B) Smart Workflows - High-level research automation
 C) Dual Library - Group and personal library management
 """
 
-from .client import ZoteroMCPClient, DualLibraryClient
+from .client import DualLibraryClient, ZoteroMCPClient
 from .proxy import ZoteroProxy
 from .workflows import ZoteroWorkflows
 

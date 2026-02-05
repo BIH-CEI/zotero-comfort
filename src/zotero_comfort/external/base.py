@@ -3,7 +3,7 @@ Abstract base class for external literature sources.
 """
 
 from abc import ABC, abstractmethod
-from typing import List, Dict, Optional
+from typing import Dict, List
 
 
 class ExternalSource(ABC):

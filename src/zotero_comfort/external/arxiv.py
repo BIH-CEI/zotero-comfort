@@ -6,8 +6,7 @@ Provides search, paper retrieval, and metadata extraction.
 """
 
 import logging
-from typing import List, Dict, Optional
-from datetime import datetime
+from typing import Dict, List, Optional
 
 import arxiv
 
