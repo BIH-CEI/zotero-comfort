@@ -2,11 +2,19 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies + Node.js (for upstream zotero-mcp)
 RUN apt-get update && apt-get install -y \
     git \
     curl \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
+
+# Install upstream zotero-mcp (54yyyu/zotero-mcp) - Node.js MCP server
+# Vendored with node_modules from ceir-zotero-mcp container
+COPY vendor/zotero-mcp/ /opt/zotero-mcp/
+RUN printf '#!/bin/bash\nnode /opt/zotero-mcp/server.js "$@"\n' > /usr/local/bin/zotero-mcp && \
+    chmod +x /usr/local/bin/zotero-mcp
 
 # Copy project files
 COPY pyproject.toml uv.lock* ./

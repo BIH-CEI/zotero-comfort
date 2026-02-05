@@ -1,0 +1,13 @@
+{
+  "name": "zotero-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for Zotero Web API integration",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  }
+}
