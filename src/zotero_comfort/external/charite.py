@@ -41,6 +41,7 @@ class TeamMember:
     token: Optional[str] = None
     profile_url: Optional[str] = None
     orcid: Optional[str] = None
+    aliases: Optional[List[str]] = None  # surname spelling variants for matching
 
 
 # CEIR team roster with API tokens discovered from the Forschungsdatenbank.
@@ -72,6 +73,7 @@ CEIR_TEAM: List[TeamMember] = [
         surname="Debertshäuser",
         token="85bcddc047444b8fad16b77bcf25ad8e",
         profile_url="https://forschungsdatenbank.charite.de/experts/profile/thomas_debertshaeuser/de",
+        aliases=["Debertshaeuser"],
     ),
     TeamMember(
         name="Claudia Finis",
@@ -97,12 +99,14 @@ CEIR_TEAM: List[TeamMember] = [
         name="Thimo-Andre Hölter",
         surname="Hölter",
         orcid="0000-0002-5949-5269",
+        aliases=["Holter", "Hoelter"],
     ),
     TeamMember(
         name="Miriam Rebecca Hübner",
         surname="Hübner",
         token="26b0f5b4da1b40308820c684854b3381",
         profile_url="https://forschungsdatenbank.charite.de/experts/profile/miriam-rebecca_huebner/de",
+        aliases=["Hubner", "Huebner"],
     ),
     TeamMember(
         name="Sophie Klopfenstein",
@@ -138,12 +142,14 @@ CEIR_TEAM: List[TeamMember] = [
         surname="Salgado",
         token="19bdf2db5939424abe39a50b2146c666",
         profile_url="https://forschungsdatenbank.charite.de/experts/expertenprofil.xhtml?id=19bdf2db5939424abe39a50b2146c666&type=ps&lang=de",
+        aliases=["Salgado-Baez", "Salgado Baez"],
     ),
     TeamMember(
         name="Julian Saß",
         surname="Saß",
         token="e6363d0ec17b4ee7bb22afa5a19660ef",
         profile_url="https://forschungsdatenbank.charite.de/experts/profile/julian_sass/de",
+        aliases=["Sass"],
     ),
     TeamMember(
         name="Marco Schaarschmidt",
@@ -439,7 +445,9 @@ class ChariteClient(ExternalSource):
         name_lower = name.lower()
         matches = [
             m for m in CEIR_TEAM
-            if name_lower in m.name.lower() or name_lower in m.surname.lower()
+            if name_lower in m.name.lower()
+            or name_lower in m.surname.lower()
+            or any(name_lower in a.lower() for a in (m.aliases or []))
         ]
         if not matches:
             logger.warning(f"No team member found matching '{name}'")
@@ -625,6 +633,16 @@ class ChariteClient(ExternalSource):
 
         return unique
 
+    @staticmethod
+    def get_all_surnames() -> set:
+        """Get all matchable surnames including aliases (lowercased)."""
+        names: set = set()
+        for m in CEIR_TEAM:
+            names.add(m.surname.lower())
+            for alias in (m.aliases or []):
+                names.add(alias.lower())
+        return names
+
     def get_team_roster(self) -> List[Dict]:
         """
         Get the current CEIR team roster.
@@ -636,6 +654,7 @@ class ChariteClient(ExternalSource):
             {
                 "name": m.name,
                 "surname": m.surname,
+                "aliases": m.aliases or [],
                 "token": m.token,
                 "profile_url": m.profile_url,
                 "orcid": m.orcid,
