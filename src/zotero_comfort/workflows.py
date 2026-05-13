@@ -11,6 +11,8 @@ import logging
 import re
 from typing import Any, Dict, List, Optional
 
+import httpx
+
 from .client import ZoteroMCPClient
 
 logger = logging.getLogger(__name__)
@@ -140,30 +142,43 @@ class ZoteroWorkflows:
         doi: str,
         check_duplicates: bool = True,
         suggest_collection: bool = True,
+        collection_name: Optional[str] = None,
+        tags: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """
         Intelligently add a paper from DOI.
 
-        Checks for duplicates, resolves metadata, and suggests collection placement.
+        Resolves metadata via Crossref, dedups by DOI (library-wide), writes
+        to Zotero, and optionally attaches to a target collection. If the
+        paper already exists in the library but is not in the target
+        collection, attaches the existing item rather than creating a
+        duplicate record.
 
         Args:
             doi: Paper DOI (e.g., "10.1234/example.2024")
             check_duplicates: Whether to check if paper already exists
-            suggest_collection: Whether to suggest a collection
+            suggest_collection: Whether to return a suggested collection name
+            collection_name: If given, attach the item to this collection
+                (created if missing). Without this argument the call behaves
+                like a metadata/dedup probe and does not write.
+            tags: Tags to attach to the item on write
 
         Returns:
             {
-                'status': 'success' | 'duplicate' | 'error',
+                'status': 'added' | 'attached' | 'already_in_collection'
+                          | 'duplicate' | 'ready' | 'error',
                 'doi': str,
                 'title': str (if resolved),
-                'suggested_collection': str (if suggest_collection=True),
+                'zotero_key': str (if a record was created or reused),
+                'collection_key': str (if collection_name given),
                 'duplicate_key': str (if duplicate found),
+                'suggested_collection': str (if suggest_collection=True),
                 'message': str
             }
         """
         logger.info(f"Smart add paper: {doi}")
+        tags = tags or []
 
-        # Normalize DOI
         doi = self._normalize_doi(doi)
         if not doi:
             return {
@@ -172,29 +187,169 @@ class ZoteroWorkflows:
                 "message": "Invalid DOI format",
             }
 
-        # Check for duplicates by searching for DOI
+        existing_key: Optional[str] = None
+        existing_title: str = ""
         if check_duplicates:
             existing = self.client.search_items(doi, limit=5)
             for paper in existing:
                 paper_doi = self._extract_doi(paper)
                 if paper_doi and paper_doi.lower() == doi.lower():
-                    return {
-                        "status": "duplicate",
-                        "doi": doi,
-                        "title": paper.get("title", ""),
-                        "duplicate_key": paper.get("key", ""),
-                        "message": "Paper already exists in library",
-                    }
+                    existing_key = paper.get("key", "")
+                    existing_title = paper.get("title", "")
+                    break
 
-        # Note: Actual DOI resolution and item creation would require write access
-        # to Zotero, which depends on MCP server configuration. This workflow
-        # prepares the metadata and suggestion but may not complete the add.
+        collection_key: Optional[str] = None
+        if collection_name:
+            collection_key = self._resolve_or_create_collection(collection_name)
+            if not collection_key:
+                return {
+                    "status": "error",
+                    "doi": doi,
+                    "message": f"Could not resolve or create collection '{collection_name}'",
+                }
+
+        if existing_key:
+            if collection_key:
+                attach_result = self.client.add_items_to_collection(
+                    collection_key, [existing_key]
+                )
+                detail = (attach_result.get("details") or [{}])[0]
+                detail_status = detail.get("status")
+                if detail_status == "already_in_collection":
+                    return {
+                        "status": "already_in_collection",
+                        "doi": doi,
+                        "title": existing_title,
+                        "zotero_key": existing_key,
+                        "duplicate_key": existing_key,
+                        "collection_key": collection_key,
+                        "message": "Paper already exists and is in target collection",
+                    }
+                return {
+                    "status": "attached",
+                    "doi": doi,
+                    "title": existing_title,
+                    "zotero_key": existing_key,
+                    "duplicate_key": existing_key,
+                    "collection_key": collection_key,
+                    "message": "Existing item attached to target collection",
+                }
+            return {
+                "status": "duplicate",
+                "doi": doi,
+                "title": existing_title,
+                "duplicate_key": existing_key,
+                "message": "Paper already exists in library",
+            }
+
+        if not collection_name:
+            return {
+                "status": "ready",
+                "doi": doi,
+                "message": "DOI validated, no duplicates found. Pass collection_name to write.",
+                "suggested_collection": (
+                    self._suggest_collection(doi) if suggest_collection else None
+                ),
+            }
+
+        meta = self._fetch_crossref(doi)
+        if not meta:
+            return {
+                "status": "error",
+                "doi": doi,
+                "message": "Crossref metadata fetch failed",
+                "collection_key": collection_key,
+            }
+
+        item = self._crossref_to_zotero_item(meta, doi=doi)
+        if tags:
+            item["tags"] = [{"tag": t} for t in tags]
+        if collection_key:
+            item["collections"] = [collection_key]
+
+        write_result = self.client.add_item(item)
+        if write_result.get("status") != "success":
+            return {
+                "status": "error",
+                "doi": doi,
+                "message": write_result.get("error", "Zotero write failed"),
+                "collection_key": collection_key,
+            }
+
+        zotero_key = write_result.get("key", "")
+        return {
+            "status": "added",
+            "doi": doi,
+            "title": item.get("title", ""),
+            "zotero_key": zotero_key,
+            "collection_key": collection_key,
+            "message": "Paper added to Zotero",
+        }
+
+    def _resolve_or_create_collection(self, name: str) -> Optional[str]:
+        """Return a collection key for `name`, creating the collection if needed."""
+        for coll in self.client.list_collections():
+            if coll.get("name") == name:
+                return coll.get("key")
+        created = self.client.create_collection(name)
+        if created.get("status") == "success":
+            return created.get("key")
+        logger.error(f"Failed to create collection '{name}': {created}")
+        return None
+
+    def _fetch_crossref(self, doi: str) -> Optional[Dict[str, Any]]:
+        """Fetch Crossref metadata for a DOI. Returns the `message` block or None."""
+        try:
+            url = f"https://api.crossref.org/works/{doi}"
+            with httpx.Client(timeout=20.0) as client:
+                response = client.get(url, headers={"User-Agent": "zotero-comfort/0.1"})
+                if response.status_code == 404:
+                    return None
+                response.raise_for_status()
+                payload = response.json()
+            return payload.get("message")
+        except Exception as e:
+            logger.error(f"Crossref fetch error for {doi}: {e}")
+            return None
+
+    def _crossref_to_zotero_item(
+        self, meta: Dict[str, Any], doi: str
+    ) -> Dict[str, Any]:
+        """Convert a Crossref `message` block to a Zotero item dict."""
+        title = ""
+        if meta.get("title"):
+            title = meta["title"][0] if isinstance(meta["title"], list) else meta["title"]
+
+        creators = []
+        for author in meta.get("author", []) or []:
+            creators.append({
+                "creatorType": "author",
+                "firstName": author.get("given", ""),
+                "lastName": author.get("family", ""),
+            })
+
+        container = meta.get("container-title", [])
+        publication_title = container[0] if container else ""
+
+        issued = meta.get("issued", {}).get("date-parts", [[""]])
+        date = "-".join(str(p) for p in (issued[0] if issued else [""]) if p != "")
+
+        abstract = meta.get("abstract", "")
+        if abstract:
+            abstract = re.sub(r"<[^>]+>", "", abstract).strip()
 
         return {
-            "status": "ready",
-            "doi": doi,
-            "message": "DOI validated, no duplicates found. Manual add recommended.",
-            "suggested_collection": self._suggest_collection(doi) if suggest_collection else None,
+            "itemType": "journalArticle",
+            "title": title,
+            "creators": creators,
+            "DOI": doi,
+            "publicationTitle": publication_title,
+            "date": date,
+            "volume": meta.get("volume", ""),
+            "issue": meta.get("issue", ""),
+            "pages": meta.get("page", ""),
+            "abstractNote": abstract,
+            "url": meta.get("URL", ""),
         }
 
     def export_bibliography(

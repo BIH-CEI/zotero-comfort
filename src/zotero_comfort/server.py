@@ -152,8 +152,12 @@ class ZoteroComfortServer:
             {
                 "name": "smart_add_paper",
                 "description": (
-                    "Add paper from DOI with duplicate checking"
-                    " and collection suggestion"
+                    "Add paper from DOI with duplicate checking and optional"
+                    " collection/tag assignment. Without collection_name, this"
+                    " is a dedup/metadata probe; with collection_name, the"
+                    " paper is fetched from Crossref and written to Zotero,"
+                    " or (if already in library) attached to the target"
+                    " collection without creating a duplicate record."
                 ),
                 "inputSchema": {
                     "type": "object",
@@ -166,6 +170,18 @@ class ZoteroComfortServer:
                             "type": "boolean",
                             "description": "Check if paper already exists (default: true)",
                             "default": True,
+                        },
+                        "collection_name": {
+                            "type": "string",
+                            "description": (
+                                "Target collection. Created if missing."
+                                " Required for the tool to actually write."
+                            ),
+                        },
+                        "tags": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Tags to apply to the new item",
                         },
                     },
                     "required": ["doi"],
@@ -444,8 +460,10 @@ class ZoteroComfortServer:
             )
         elif tool_name == "smart_add_paper":
             return self.workflows.smart_add_paper(
-                arguments.get("doi", ""),
-                arguments.get("check_duplicates", True),
+                doi=arguments.get("doi", ""),
+                check_duplicates=arguments.get("check_duplicates", True),
+                collection_name=arguments.get("collection_name"),
+                tags=arguments.get("tags"),
             )
         elif tool_name == "export_bibliography":
             return self.workflows.export_bibliography(

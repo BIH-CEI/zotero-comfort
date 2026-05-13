@@ -152,27 +152,77 @@ class ZoteroMCPClient:
     # Convenience methods mapping to zotero-mcp tools
 
     def search_items(self, query: str, limit: int = 50) -> List[Dict]:
-        """Search for papers in the library."""
-        result = self.call_tool("zotero_search_items", query=query, limit=limit)
-        if "error" in result:
-            logger.error(f"Search error: {result['error']}")
+        """Search for papers in the library via direct REST.
+
+        Bypasses the subprocess MCP proxy so this method is safe to call
+        from inside an already-running asyncio loop.
+        """
+        try:
+            url = f"{self._get_api_prefix()}/items"
+            params = {"q": query, "limit": limit, "format": "json"}
+            with httpx.Client(timeout=30.0) as client:
+                response = client.get(url, headers=self._api_headers(), params=params)
+                response.raise_for_status()
+                raw = response.json()
+            items = []
+            for entry in raw:
+                data = entry.get("data", {}) if isinstance(entry, dict) else {}
+                if data:
+                    items.append({**data, "key": data.get("key", entry.get("key", ""))})
+            return items[:limit]
+        except Exception as e:
+            logger.error(f"Search error: {e}")
             return []
-        return result.get("items", result.get("results", []))[:limit]
 
     def get_item(self, item_key: str) -> Dict[str, Any]:
-        """Get metadata for a specific item."""
-        result = self.call_tool("zotero_get_item_metadata", item_key=item_key)
-        if "error" in result:
-            logger.error(f"Item fetch error: {result['error']}")
-        return result
+        """Get metadata for a specific item via direct REST.
+
+        Bypasses the subprocess MCP proxy so this method is safe to call
+        from inside an already-running asyncio loop.
+        """
+        try:
+            url = f"{self._get_api_prefix()}/items/{item_key}"
+            with httpx.Client(timeout=30.0) as client:
+                response = client.get(url, headers=self._api_headers())
+                response.raise_for_status()
+                raw = response.json()
+            data = raw.get("data", {}) if isinstance(raw, dict) else {}
+            if "version" not in data and isinstance(raw, dict):
+                data["version"] = raw.get("version", 0)
+            return data
+        except Exception as e:
+            logger.error(f"Item fetch error: {e}")
+            return {"error": str(e)}
 
     def list_collections(self) -> List[Dict]:
-        """List all collections in the library."""
-        result = self.call_tool("zotero_get_collections")
-        if "error" in result:
-            logger.error(f"Collection fetch error: {result['error']}")
+        """List all collections in the library via direct REST.
+
+        Bypasses the subprocess MCP proxy so this method is safe to call
+        from inside an already-running asyncio loop.
+        """
+        try:
+            url = f"{self._get_api_prefix()}/collections"
+            with httpx.Client(timeout=30.0) as client:
+                response = client.get(
+                    url,
+                    headers=self._api_headers(),
+                    params={"limit": 100, "format": "json"},
+                )
+                response.raise_for_status()
+                raw = response.json()
+            collections = []
+            for entry in raw:
+                data = entry.get("data", {}) if isinstance(entry, dict) else {}
+                if data:
+                    collections.append({
+                        "key": data.get("key", entry.get("key", "")),
+                        "name": data.get("name", ""),
+                        "parentCollection": data.get("parentCollection", False),
+                    })
+            return collections
+        except Exception as e:
+            logger.error(f"Collection fetch error: {e}")
             return []
-        return result.get("collections", [])
 
     def get_collection_items(self, collection_key: str) -> List[Dict]:
         """Get items in a specific collection."""
